@@ -24,6 +24,7 @@ export default defineConfig({
     target: 'esnext',
     minify: 'terser',
     cssMinify: true,
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
