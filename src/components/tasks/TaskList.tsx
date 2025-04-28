@@ -12,26 +12,30 @@ type TaskListProps = {
 
 const TaskList: React.FC<TaskListProps> = ({ status }) => {
   const { tasks, loading } = useTask();
-  
+
+  // Filtering the tasks based on status (incomplete/complete)
   const filteredTasks = useMemo(() => 
-    tasks.filter((task) => task.status === status),
+    tasks?.filter((task) => task.status === status) || [],
     [tasks, status]
   );
-  
+
+  // Cache for optimizing dynamic row heights
   const cache = useMemo(() => new CellMeasurerCache({
     fixedWidth: true,
     defaultHeight: 80
   }), []);
-  
-  if (loading) {
+
+  // Loading state: show skeleton
+  if (loading || !tasks) {
     return (
       <div className="space-y-4">
         <LoadingSkeleton count={3} className="h-16" />
       </div>
     );
   }
-  
-  if (filteredTasks.length === 0) {
+
+  // No tasks state: show empty message
+  if (!loading && filteredTasks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
         <ClipboardList className="h-12 w-12 text-gray-400 mb-4" />
@@ -46,7 +50,8 @@ const TaskList: React.FC<TaskListProps> = ({ status }) => {
       </div>
     );
   }
-  
+
+  // Render the list of tasks
   return (
     <div className="h-[calc(100vh-300px)]">
       <AutoSizer>
