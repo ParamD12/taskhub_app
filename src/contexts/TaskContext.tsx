@@ -19,15 +19,18 @@ const TaskContext = createContext<TaskContextType | undefined>(undefined);
 const TASKS_QUERY_KEY = 'tasks';
 
 export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();  // <- ensure authLoading available
   const queryClient = useQueryClient();
 
-  // Fetch tasks with React Query
-  const { data: tasks = [], isLoading } = useQuery({
+  const {
+    data: tasks = [],
+    isLoading: taskLoading,
+    isFetching,
+  } = useQuery({
     queryKey: [TASKS_QUERY_KEY, user?.id],
     queryFn: () => user ? taskQueries.fetchTasks(user.id) : Promise.resolve([]),
-    enabled: !!user,
-    select: useCallback((data) => 
+    enabled: !!user?.id && !authLoading,  // <- Don't run until user ready
+    select: useCallback((data) =>
       data.map(task => ({
         id: task.task_id,
         userId: user!.id,
@@ -37,37 +40,37 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updatedAt: task.updated_at
       })),
     [user]),
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    cacheTime: 1000 * 60 * 30, // 30 minutes
+    staleTime: 1000 * 60 * 5,
+    cacheTime: 1000 * 60 * 30,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     retry: 3,
     retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
-  // Prefetch tasks for the current user
+  const loading = authLoading || taskLoading || isFetching;
+
   const prefetchTasks = useCallback(async () => {
-    if (user) {
+    if (user?.id) {
       await queryClient.prefetchQuery({
         queryKey: [TASKS_QUERY_KEY, user.id],
         queryFn: () => taskQueries.fetchTasks(user.id),
         staleTime: 1000 * 60 * 5,
       });
     }
-  }, [user, queryClient]);
+  }, [user?.id, queryClient]);
 
-  // Prefetch tasks when the component mounts
   React.useEffect(() => {
-    prefetchTasks();
-  }, [prefetchTasks]);
+    if (user?.id) {
+      prefetchTasks();
+    }
+  }, [prefetchTasks, user?.id]);
 
-  // Add task mutation with optimistic updates
   const addTaskMutation = useMutation({
-    mutationFn: (taskName: string) => 
-      taskQueries.addTask(user!.id, taskName),
+    mutationFn: (taskName: string) => taskQueries.addTask(user!.id, taskName),
     onMutate: async (taskName) => {
       await queryClient.cancelQueries({ queryKey: [TASKS_QUERY_KEY, user?.id] });
-      
+
       const optimisticTask = {
         id: 'temp-' + Date.now(),
         userId: user!.id,
@@ -77,10 +80,7 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updatedAt: new Date().toISOString()
       };
 
-      queryClient.setQueryData<Task[]>([TASKS_QUERY_KEY, user?.id], (old = []) => 
-        [optimisticTask, ...old]
-      );
-
+      queryClient.setQueryData<Task[]>([TASKS_QUERY_KEY, user?.id], (old = []) => [optimisticTask, ...old]);
       return { optimisticTask };
     },
     onSuccess: () => {
@@ -95,7 +95,6 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
 
-  // Update task status mutation with optimistic updates
   const updateTaskStatusMutation = useMutation({
     mutationFn: ({ taskId, status }: { taskId: string, status: 'incomplete' | 'complete' }) =>
       taskQueries.updateTask(taskId, user!.id, { status }),
@@ -129,7 +128,6 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
 
-  // Update task name mutation with optimistic updates
   const updateTaskNameMutation = useMutation({
     mutationFn: ({ taskId, taskName }: { taskId: string, taskName: string }) =>
       taskQueries.updateTask(taskId, user!.id, { task_name: taskName }),
@@ -163,10 +161,8 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
 
-  // Delete task mutation with optimistic updates
   const deleteTaskMutation = useMutation({
-    mutationFn: (taskId: string) => 
-      taskQueries.deleteTask(taskId, user!.id),
+    mutationFn: (taskId: string) => taskQueries.deleteTask(taskId, user!.id),
     onMutate: async (taskId) => {
       await queryClient.cancelQueries({ queryKey: [TASKS_QUERY_KEY, user?.id] });
 
@@ -195,7 +191,7 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const contextValue = {
     tasks,
-    loading: isLoading,
+    loading,
     addTask: (taskName: string) => addTaskMutation.mutateAsync(taskName),
     updateTaskStatus: (taskId: string, status: 'incomplete' | 'complete') =>
       updateTaskStatusMutation.mutateAsync({ taskId, status }),
