@@ -43,23 +43,19 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refetchOnReconnect: true,
     retry: 3,
     retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
+    initialData: () => {
+      // Try to get data from cache first
+      const cachedData = localStorage.getItem(`tasks_${user?.id}`);
+      return cachedData ? JSON.parse(cachedData) : [];
+    },
   });
 
-  // Prefetch tasks for the current user
-  const prefetchTasks = useCallback(async () => {
-    if (user) {
-      await queryClient.prefetchQuery({
-        queryKey: [TASKS_QUERY_KEY, user.id],
-        queryFn: () => taskQueries.fetchTasks(user.id),
-        staleTime: 1000 * 60 * 5,
-      });
-    }
-  }, [user, queryClient]);
-
-  // Prefetch tasks when the component mounts
+  // Cache tasks in localStorage when they change
   React.useEffect(() => {
-    prefetchTasks();
-  }, [prefetchTasks]);
+    if (user && tasks.length > 0) {
+      localStorage.setItem(`tasks_${user.id}`, JSON.stringify(tasks));
+    }
+  }, [tasks, user]);
 
   // Add task mutation with optimistic updates
   const addTaskMutation = useMutation({
@@ -83,15 +79,21 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return { optimisticTask };
     },
-    onSuccess: () => {
+    onSuccess: (newTask) => {
+      queryClient.setQueryData<Task[]>([TASKS_QUERY_KEY, user?.id], (old = []) => {
+        const filteredTasks = old.filter(task => !task.id.startsWith('temp-'));
+        return [newTask, ...filteredTasks];
+      });
       toast.success('Task added successfully');
     },
-    onError: (error) => {
+    onError: (error, _, context) => {
       console.error('Error adding task:', error);
       toast.error('Failed to add task');
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: [TASKS_QUERY_KEY, user?.id] });
+      if (context?.optimisticTask) {
+        queryClient.setQueryData<Task[]>([TASKS_QUERY_KEY, user?.id], (old = []) =>
+          old.filter(task => task.id !== context.optimisticTask.id)
+        );
+      }
     }
   });
 
@@ -123,9 +125,6 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     },
     onSuccess: (_, { status }) => {
       toast.success(`Task marked as ${status}`);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: [TASKS_QUERY_KEY, user?.id] });
     }
   });
 
@@ -157,9 +156,6 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     },
     onSuccess: () => {
       toast.success('Task updated successfully');
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: [TASKS_QUERY_KEY, user?.id] });
     }
   });
 
@@ -187,9 +183,6 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     },
     onSuccess: () => {
       toast.success('Task deleted successfully');
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: [TASKS_QUERY_KEY, user?.id] });
     }
   });
 
