@@ -10,14 +10,20 @@ const AddTaskForm: React.FC = () => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (taskName.trim()) {
-      await addTask(taskName);
+  e.preventDefault();
+
+  if (!taskName || typeof taskName !== 'string') return;
+
+  if (taskName.trim()) {
+    try {
+      await addTask(taskName.trim());
       setTaskName('');
       setIsExpanded(false);
+    } catch (error) {
+      console.error("Task submission failed:", error);
     }
-  };
+  }
+};
 
   return (
     <div className="mb-6 bg-white border border-gray-200 rounded-lg shadow-sm">
