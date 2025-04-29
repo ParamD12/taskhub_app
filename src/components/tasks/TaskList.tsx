@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import { Task } from '../../types';
 import TaskItem from './TaskItem';
@@ -13,19 +13,26 @@ type TaskListProps = {
 const TaskList: React.FC<TaskListProps> = ({ status }) => {
   const { tasks, loading } = useTask();
 
-  // Filtering the tasks based on status (incomplete/complete)
+  // Filter tasks based on completion status
   const filteredTasks = useMemo(() => 
     tasks?.filter((task) => task.status === status) || [],
     [tasks, status]
   );
 
-  // Cache for optimizing dynamic row heights
-  const cache = useMemo(() => new CellMeasurerCache({
-    fixedWidth: true,
-    defaultHeight: 80
-  }), []);
+  // UseRef for cache to avoid regeneration on each render
+  const cacheRef = useRef(
+    new CellMeasurerCache({
+      fixedWidth: true,
+      defaultHeight: 80,
+    })
+  );
 
-  // Loading state: show skeleton
+  // Clear cache when the list size changes (important for empty -> populated transition)
+  useEffect(() => {
+    cacheRef.current.clearAll();
+  }, [filteredTasks.length]);
+
+  // Show loading skeleton while data is loading
   if (loading || !tasks) {
     return (
       <div className="space-y-4">
@@ -34,7 +41,7 @@ const TaskList: React.FC<TaskListProps> = ({ status }) => {
     );
   }
 
-  // No tasks state: show empty message
+  // Handle empty list case
   if (!loading && filteredTasks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
@@ -51,21 +58,22 @@ const TaskList: React.FC<TaskListProps> = ({ status }) => {
     );
   }
 
-  // Render the list of tasks
+  // Render list of tasks using react-virtualized
   return (
     <div className="h-[calc(100vh-300px)]">
       <AutoSizer>
         {({ width, height }) => (
           <List
+            key={filteredTasks.length} // forces re-render when task count changes
             width={width}
             height={height}
             rowCount={filteredTasks.length}
-            rowHeight={cache.rowHeight}
-            deferredMeasurementCache={cache}
+            rowHeight={cacheRef.current.rowHeight}
+            deferredMeasurementCache={cacheRef.current}
             overscanRowCount={5}
             rowRenderer={({ index, key, style, parent }) => (
               <CellMeasurer
-                cache={cache}
+                cache={cacheRef.current}
                 columnIndex={0}
                 key={key}
                 rowIndex={index}
