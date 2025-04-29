@@ -14,13 +14,12 @@ type AuthContextType = {
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 const SESSION_STORAGE_KEY = 'app_session';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
-    const savedSession = sessionStorage.getItem(SESSION_STORAGE_KEY);
-    return savedSession ? JSON.parse(savedSession) : null;
+    const saved = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
   });
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -33,40 +32,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('justRegistered');
   };
 
+  const fetchUserProfile = async (sessionUser: any): Promise<User | null> => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('name, dob')
+      .eq('user_id', sessionUser.id)
+      .maybeSingle();
+
+    if (error || !data) {
+      console.error('Failed to fetch user profile:', error);
+      return null;
+    }
+
+    return {
+      id: sessionUser.id,
+      name: data.name,
+      email: sessionUser.email!,
+      dob: data.dob,
+    };
+  };
+
   useEffect(() => {
     const initializeAuth = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error || !session) {
-          clearAuthState();
-          setLoading(false);
-          return;
-        }
+        if (error || !session) throw new Error('No valid session found');
 
-        // Get user profile details
-        const { data: profileData, error: profileError } = await supabase
-          .from('users')
-          .select('name, dob')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
+        const profile = await fetchUserProfile(session.user);
+        if (!profile) throw new Error('Profile load failed');
 
-        if (profileError || !profileData) {
-          throw new Error('Failed to fetch user profile');
-        }
-
-        const userData = {
-          id: session.user.id,
-          name: profileData.name,
-          email: session.user.email!,
-          dob: profileData.dob
-        };
-
-        setUser(userData);
-        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userData));
-        
-      } catch (error) {
-        console.error('Auth initialization error:', error);
+        setUser(profile);
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(profile));
+      } catch (err) {
         clearAuthState();
       } finally {
         setLoading(false);
@@ -80,78 +77,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           if (localStorage.getItem('justRegistered')) {
             localStorage.removeItem('justRegistered');
+            setLoading(false); // ✅ Fix: ensure loading false
             return;
           }
 
-          const { data: profileData, error: profileError } = await supabase
-            .from('users')
-            .select('name, dob')
-            .eq('user_id', session.user.id)
-            .maybeSingle();
+          const profile = await fetchUserProfile(session.user);
+          if (!profile) throw new Error('Profile fetch failed');
 
-          if (profileError || !profileData) {
-            throw new Error('Failed to fetch user profile');
-          }
-
-          const userData = {
-            id: session.user.id,
-            name: profileData.name,
-            email: session.user.email!,
-            dob: profileData.dob
-          };
-
-          setUser(userData);
-          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userData));
-          
-          if (!localStorage.getItem('justRegistered')) {
-            navigate('/');
-          }
-        } catch (error) {
-          console.error('Auth state change error:', error);
+          setUser(profile);
+          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(profile));
+          navigate('/');
+        } catch (err) {
           clearAuthState();
           navigate('/login');
+        } finally {
+          setLoading(false); // ✅ Ensure loading false in all cases
         }
       } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         clearAuthState();
+        setLoading(false); // ✅ Ensure loading false on sign out
         navigate('/login');
       }
     });
 
-    return () => {
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
   const signUp = async (email: string, password: string, name: string, dob: string) => {
     try {
       setLoading(true);
       localStorage.setItem('justRegistered', 'true');
-      
-      const { data, error } = await supabase.auth.signUp({ 
-        email, 
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
         password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/login`
-        }
+        options: { emailRedirectTo: `${window.location.origin}/login` }
       });
 
-      if (error) throw error;
-      if (!data.user) throw new Error('User creation failed');
+      if (error || !data.user) throw new Error('User registration failed');
 
       const { error: profileError } = await supabase.from('users').insert({
         user_id: data.user.id,
         name,
         email,
-        dob
+        dob,
       });
 
       if (profileError) throw profileError;
 
-      toast.success('Account created successfully! Please sign in.');
+      toast.success('Account created. Please sign in.');
       navigate('/login');
     } catch (error: any) {
       toast.error(error.message || 'Registration failed');
-      console.error('Registration error:', error);
       localStorage.removeItem('justRegistered');
     } finally {
       setLoading(false);
@@ -161,18 +138,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signIn = async (email: string, password: string) => {
     try {
       setLoading(true);
-      
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      
-      toast.success('Signed in successfully!');
+      toast.success('Signed in successfully');
     } catch (error: any) {
-      toast.error(error.message || 'Sign in failed');
-      console.error('Sign in error:', error);
+      toast.error(error.message || 'Sign-in failed');
       clearAuthState();
     } finally {
       setLoading(false);
@@ -184,13 +154,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      
       clearAuthState();
       navigate('/login');
       toast.success('Signed out successfully');
     } catch (error: any) {
-      toast.error(error.message || 'Sign out failed');
-      console.error('Sign out error:', error);
+      toast.error(error.message || 'Sign-out failed');
     } finally {
       setLoading(false);
     }
@@ -199,32 +167,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateProfile = async (name: string, password?: string) => {
     try {
       setLoading(true);
-      
       if (!user) throw new Error('No user logged in');
 
       if (password) {
-        const { error: passwordError } = await supabase.auth.updateUser({
-          password
-        });
-        
-        if (passwordError) throw passwordError;
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
       }
-      
-      const { error: profileError } = await supabase
+
+      const { error } = await supabase
         .from('users')
         .update({ name })
         .eq('user_id', user.id);
-        
-      if (profileError) throw profileError;
-      
+
+      if (error) throw error;
+
       const updatedUser = { ...user, name };
       setUser(updatedUser);
       sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updatedUser));
-      
       toast.success('Profile updated successfully');
     } catch (error: any) {
       toast.error(error.message || 'Profile update failed');
-      console.error('Profile update error:', error);
     } finally {
       setLoading(false);
     }
@@ -232,15 +194,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut, updateProfile }}>
-      {children}
+      {loading ? <div>Loading...</div> : children}
     </AuthContext.Provider>
   );
 };
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
