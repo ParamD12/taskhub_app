@@ -16,7 +16,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
-  const [editedName, setEditedName] = useState(task.name);
+  const [editedName, setEditedName] = useState(task.name ?? '');
   const [isDeleting, setIsDeleting] = useState(false);
   
   const handleStatusChange = async () => {
