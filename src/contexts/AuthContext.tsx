@@ -35,55 +35,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const initializeAuth = async () => {
-  console.log('[Auth] Starting auth initialization...');
-  try {
-    const {
-      data: { session },
-      error
-    } = await supabase.auth.getSession();
+      console.log('[Auth] Starting auth initialization...');
+      try {
+        const {
+          data: { session },
+          error
+        } = await supabase.auth.getSession();
 
-    // If no session yet, wait for onAuthStateChange to handle it
-    console.log('[Auth] Session on init:', session);
+        console.log('[Auth] Session on init:', session);
 
-    if (!session) {
-      console.warn('[Auth] No session found initially. Waiting for onAuthStateChange.');
-      return; // Don't call clearAuthState yet — let the auth listener handle it
-    }
+        if (!session) {
+          console.warn('[Auth] No session found initially. Waiting for onAuthStateChange.');
+          return;
+        }
 
-    const { data: profileData, error: profileError } = await supabase
-      .from('users')
-      .select('name, dob')
-      .eq('user_id', session.user.id)
-      .maybeSingle();
+        const { data: profileData, error: profileError } = await supabase
+          .from('users')
+          .select('name, dob')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
 
-    if (profileError || !profileData) {
-      throw new Error('Failed to fetch user profile');
-    }
+        if (profileError || !profileData) {
+          throw new Error('Failed to fetch user profile');
+        }
 
-    const userData = {
-      id: session.user.id,
-      name: profileData.name,
-      email: session.user.email!,
-      dob: profileData.dob
-    };
+        const userData = {
+          id: session.user.id,
+          name: profileData.name,
+          email: session.user.email!,
+          dob: profileData.dob
+        };
 
-    console.log('[Auth] User profile loaded:', userData);
-    setUser(userData);
-    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userData));
-  } catch (error) {
-    console.error('[Auth] Auth initialization error:', error);
-    clearAuthState();
-  } finally {
-    setLoading(false);
-  }
-};
-
-
+        console.log('[Auth] User profile loaded:', userData);
         setUser(userData);
         sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userData));
-        
       } catch (error) {
-        console.error('Auth initialization error:', error);
+        console.error('[Auth] Auth initialization error:', error);
         clearAuthState();
       } finally {
         setLoading(false);
@@ -93,6 +80,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initializeAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[Auth] onAuthStateChange event:', event, 'session:', session);
+
       if (event === 'SIGNED_IN' && session) {
         try {
           if (localStorage.getItem('justRegistered')) {
@@ -119,7 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           setUser(userData);
           sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userData));
-          
+
           if (!localStorage.getItem('justRegistered')) {
             navigate('/');
           }
@@ -143,9 +132,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
       localStorage.setItem('justRegistered', 'true');
-      
-      const { data, error } = await supabase.auth.signUp({ 
-        email, 
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/login`
@@ -178,14 +167,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signIn = async (email: string, password: string) => {
     try {
       setLoading(true);
-      
+
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
       if (error) throw error;
-      
+
       toast.success('Signed in successfully!');
     } catch (error: any) {
       toast.error(error.message || 'Sign in failed');
@@ -201,7 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      
+
       clearAuthState();
       navigate('/login');
       toast.success('Signed out successfully');
@@ -216,28 +205,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateProfile = async (name: string, password?: string) => {
     try {
       setLoading(true);
-      
+
       if (!user) throw new Error('No user logged in');
 
       if (password) {
         const { error: passwordError } = await supabase.auth.updateUser({
           password
         });
-        
+
         if (passwordError) throw passwordError;
       }
-      
+
       const { error: profileError } = await supabase
         .from('users')
         .update({ name })
         .eq('user_id', user.id);
-        
+
       if (profileError) throw profileError;
-      
+
       const updatedUser = { ...user, name };
       setUser(updatedUser);
       sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updatedUser));
-      
+
       toast.success('Profile updated successfully');
     } catch (error: any) {
       toast.error(error.message || 'Profile update failed');
