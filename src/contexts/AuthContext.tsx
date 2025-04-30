@@ -35,35 +35,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const initializeAuth = async () => {
-      console.log('[Auth] Starting auth initialization...');
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        console.log('[Auth] Supabase session:', session);
-        
-        if (error || !session) {
-          console.log('[Auth] No valid session found or error:', error);
-          clearAuthState();
-          setLoading(false);
-          return;
-        }
+  console.log('[Auth] Starting auth initialization...');
+  try {
+    const {
+      data: { session },
+      error
+    } = await supabase.auth.getSession();
 
-        // Get user profile details
-        const { data: profileData, error: profileError } = await supabase
-          .from('users')
-          .select('name, dob')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
+    // If no session yet, wait for onAuthStateChange to handle it
+    console.log('[Auth] Session on init:', session);
 
-        if (profileError || !profileData) {
-          throw new Error('Failed to fetch user profile');
-        }
+    if (!session) {
+      console.warn('[Auth] No session found initially. Waiting for onAuthStateChange.');
+      return; // Don't call clearAuthState yet — let the auth listener handle it
+    }
 
-        const userData = {
-          id: session.user.id,
-          name: profileData.name,
-          email: session.user.email!,
-          dob: profileData.dob
-        };
+    const { data: profileData, error: profileError } = await supabase
+      .from('users')
+      .select('name, dob')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+
+    if (profileError || !profileData) {
+      throw new Error('Failed to fetch user profile');
+    }
+
+    const userData = {
+      id: session.user.id,
+      name: profileData.name,
+      email: session.user.email!,
+      dob: profileData.dob
+    };
+
+    console.log('[Auth] User profile loaded:', userData);
+    setUser(userData);
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userData));
+  } catch (error) {
+    console.error('[Auth] Auth initialization error:', error);
+    clearAuthState();
+  } finally {
+    setLoading(false);
+  }
+};
+
 
         setUser(userData);
         sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userData));
