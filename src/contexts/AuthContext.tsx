@@ -35,10 +35,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const initializeAuth = async () => {
+      console.log('[Auth] Starting auth initialization...');
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
+        console.log('[Auth] Supabase session:', session);
         
         if (error || !session) {
+          console.log('[Auth] No valid session found or error:', error);
           clearAuthState();
           setLoading(false);
           return;
