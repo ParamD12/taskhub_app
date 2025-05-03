@@ -16,6 +16,8 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const SESSION_STORAGE_KEY = 'app_session';
+// Add timeout constant to prevent infinite loading
+const AUTH_TIMEOUT_MS = 5000; // 5 seconds timeout for auth operations
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
@@ -36,7 +38,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const initializeAuth = async () => {
       try {
+        // Set a timeout to prevent infinite loading
+        const timeoutId = setTimeout(() => {
+          console.warn('Auth initialization timed out');
+          clearAuthState();
+          setLoading(false);
+        }, AUTH_TIMEOUT_MS);
+
         const { data: { session }, error } = await supabase.auth.getSession();
+        
+        // Clear the timeout since we got a response
+        clearTimeout(timeoutId);
         
         if (error || !session) {
           clearAuthState();
@@ -76,10 +88,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initializeAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        try {
+      // Set a timeout for auth state changes as well
+      const stateChangeTimeoutId = setTimeout(() => {
+        console.warn('Auth state change timed out');
+        setLoading(false);
+      }, AUTH_TIMEOUT_MS);
+
+      try {
+        if (event === 'SIGNED_IN' && session) {
           if (localStorage.getItem('justRegistered')) {
             localStorage.removeItem('justRegistered');
+            clearTimeout(stateChangeTimeoutId);
             return;
           }
 
@@ -106,14 +125,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (!localStorage.getItem('justRegistered')) {
             navigate('/');
           }
-        } catch (error) {
-          console.error('Auth state change error:', error);
+        } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
           clearAuthState();
           navigate('/login');
         }
-      } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+      } catch (error) {
+        console.error('Auth state change error:', error);
         clearAuthState();
         navigate('/login');
+      } finally {
+        // Clear the timeout since we've handled the state change
+        clearTimeout(stateChangeTimeoutId);
       }
     });
 
@@ -162,10 +184,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
       
+      // Set a timeout for sign-in operation
+      const timeoutId = setTimeout(() => {
+        console.warn('Sign in operation timed out');
+        setLoading(false);
+        toast.error('Sign in timed out. Please try again.');
+      }, AUTH_TIMEOUT_MS);
+
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
+
+      // Clear timeout since we got a response
+      clearTimeout(timeoutId);
 
       if (error) throw error;
       
